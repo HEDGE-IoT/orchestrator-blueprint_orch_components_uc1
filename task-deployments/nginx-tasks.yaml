@@ -1,0 +1,164 @@
+# Four mock IoT task workloads — nginx pods tagged for the hedge-iot scheduler.
+#
+# Each pod template carries:
+#   Labels:
+#     schedulingStrategy: meetup      — required for the scheduler to watch this pod
+#     schedulerName (spec)            — binds it to my-scheduler
+#     hedge-iot/task-type             — human-readable task class
+#   Annotations (hedge-iot/* prefix):
+#     cycles-req   — CPU cycles the task needs
+#     input-size   — input data in bytes         
+#     output-size  — output data in bytes        
+#     exe-size     — executable payload in bytes 
+#     deadline     — relative deadline in ms     
+#     ccr          — communication-to-computation ratio 
+#     data-source  — IoT sensor type          
+#   Container resources.requests mirror the above so kube can schedule properly.
+
+---
+# Task 0 — temperature monitor (communication-dominated, relaxed deadline)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-temperature-monitor
+  namespace: default
+  labels:
+    hedge-iot/task-type: temperature-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: task-temperature-monitor
+  template:
+    metadata:
+      labels:
+        app: task-temperature-monitor
+        schedulingStrategy: meetup
+        serviceName: temperature-monitor
+        hedge-iot/task-type: temperature-monitor
+      annotations:
+        hedge-iot/cycles-req: "178565"
+        hedge-iot/input-size: "6634"
+        hedge-iot/output-size: "4728"
+        hedge-iot/exe-size: "32462"
+        hedge-iot/deadline: "8838"
+        hedge-iot/ccr: "4.52"
+        hedge-iot/data-source: "temperature"
+    spec:
+      schedulerName: my-scheduler
+      containers:
+      - name: nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+
+---
+# Task 1 — humidity analyzer (medium compute, relaxed deadline)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-humidity-analyzer
+  namespace: default
+  labels:
+    hedge-iot/task-type: humidity-analyzer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: task-humidity-analyzer
+  template:
+    metadata:
+      labels:
+        app: task-humidity-analyzer
+        schedulingStrategy: meetup
+        serviceName: humidity-analyzer
+        hedge-iot/task-type: humidity-analyzer
+      annotations:
+        hedge-iot/cycles-req: "332804"
+        hedge-iot/input-size: "7526"
+        hedge-iot/output-size: "918"
+        hedge-iot/exe-size: "60598"
+        hedge-iot/deadline: "8175"
+        hedge-iot/ccr: "4.61"
+        hedge-iot/data-source: "humidity"
+    spec:
+      schedulerName: my-scheduler
+      containers:
+      - name: nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+
+---
+# Task 2 — power monitor (compute-dominated, strict deadline 149 ms)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-power-monitor
+  namespace: default
+  labels:
+    hedge-iot/task-type: power-monitor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: task-power-monitor
+  template:
+    metadata:
+      labels:
+        app: task-power-monitor
+        schedulingStrategy: meetup
+        serviceName: power-monitor
+        hedge-iot/task-type: power-monitor
+      annotations:
+        hedge-iot/cycles-req: "791330"
+        hedge-iot/input-size: "1535"
+        hedge-iot/output-size: "2977"
+        hedge-iot/exe-size: "33779"
+        hedge-iot/deadline: "149"
+        hedge-iot/ccr: "0.93"
+        hedge-iot/data-source: "electric-power"
+    spec:
+      schedulerName: my-scheduler
+      containers:
+      - name: nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+
+---
+# Task 3 — edge inference (very high compute, large exe payload, moderate deadline)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-edge-inference
+  namespace: default
+  labels:
+    hedge-iot/task-type: edge-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: task-edge-inference
+  template:
+    metadata:
+      labels:
+        app: task-edge-inference
+        schedulingStrategy: meetup
+        serviceName: edge-inference
+        hedge-iot/task-type: edge-inference
+      annotations:
+        hedge-iot/cycles-req: "993076"
+        hedge-iot/input-size: "9218"
+        hedge-iot/output-size: "182"
+        hedge-iot/exe-size: "75013"
+        hedge-iot/deadline: "1614"
+        hedge-iot/ccr: "4.14"
+        hedge-iot/data-source: "pressure"
+    spec:
+      schedulerName: my-scheduler
+      containers:
+      - name: nginx
+        image: nginx:latest
+        ports:
+        - containerPort: 80

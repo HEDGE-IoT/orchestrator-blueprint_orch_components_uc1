@@ -1,0 +1,72 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-scheduler
+  namespace: kube-system
+  labels:
+    component: scheduler
+    tier: control-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: scheduler
+      tier: control-plane
+  template:
+    metadata:
+      labels:
+        component: scheduler
+        tier: control-plane
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+      serviceAccountName: my-scheduler
+      # Tolerate control-plane taints so the scheduler can run on master nodes
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: my-scheduler
+        image: vofr/custom_scheduler:v1.1
+        # Use IfNotPresent when pulling from a local registry / after a local build.
+        # Change to Always when using a remote registry with mutable tags.
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: alerts
+        - containerPort: 8081
+          name: optimizer
+        env:
+        # Empty string → scheduler.py uses load_incluster_config()
+        - name: KUBE_CONFIG_PATH
+          value: ""
+        - name: NEO4J_URI
+          value: "bolt://neo4j.kube-system.svc.cluster.local:7687"
+        - name: NEO4J_USER
+          value: "neo4j"
+        - name: NEO4J_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: neo4j-credentials
+              key: password
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          failureThreshold: 3

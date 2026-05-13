@@ -1,0 +1,119 @@
+---
+# Internal service — scheduler reaches Neo4j at neo4j:7687 inside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: neo4j
+  namespace: kube-system
+  labels:
+    app: neo4j
+spec:
+  selector:
+    app: neo4j
+  ports:
+  - name: bolt
+    port: 7687
+    targetPort: 7687
+  - name: http
+    port: 7474
+    targetPort: 7474
+  type: ClusterIP
+
+---
+# StatefulSet with emptyDir storage — data is ephemeral by design.
+# The scheduler re-syncs cluster state on every scheduling event so nothing
+# is lost that can't be reconstructed.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: neo4j
+  namespace: kube-system
+  labels:
+    app: neo4j
+spec:
+  serviceName: neo4j
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neo4j
+  template:
+    metadata:
+      labels:
+        app: neo4j
+    spec:
+      # Pin to the cloud node — matches hedge-iot/node-type=cloud label
+      # OR the built-in control-plane role (mirrors kubernetes_mapper.py logic).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: neo4j
+        image: neo4j:5
+        ports:
+        - containerPort: 7687
+          name: bolt
+        - containerPort: 7474
+          name: http
+        env:
+        - name: NEO4J_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: neo4j-credentials
+              key: auth
+        - name: NEO4J_server_memory_heap_initial__size
+          value: "256m"
+        - name: NEO4J_server_memory_heap_max__size
+          value: "512m"
+        - name: NEO4J_server_memory_pagecache__size
+          value: "256m"
+        # Accept non-default bolt address (required when running in a pod)
+        - name: NEO4J_server_bolt_advertised__address
+          value: "neo4j:7687"
+        # Kubernetes injects NEO4J_PORT_* service-discovery vars that Neo4j 5
+        # misreads as config settings (e.g. PORT.7687.TCP.PORT). Disable strict
+        # validation so those unknown keys are silently ignored.
+        - name: NEO4J_server_config_strict__validation_enabled
+          value: "false"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: logs
+          mountPath: /logs
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "768Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        readinessProbe:
+          tcpSocket:
+            port: 7687
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: data
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}
+
+---
+# Credentials secret — change password here and in scheduler-deployment.yaml
+# if you want something other than the default.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: neo4j-credentials
+  namespace: kube-system
+type: Opaque
+stringData:
+  auth: "neo4j/12345678"
+  password: "12345678"
