@@ -6,9 +6,9 @@ Task placement scheduler for Energy Services on a KubeEdge cluster. When a pod a
 
 ## Prerequisites
 
-- `kubectl` configured and pointing to the cluster
-- `helm` installed
-- [Docker Hub](https://hub.docker.com) account and repository with the Energy Service image
+- `kubectl` configured and pointing to the cluster [E0](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/KubeEdge.md) 
+- `helm` installed [Helm Package Manager](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/Helm.md)
+- [Kube Prometheus Stack](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/KubePrometheusStack.md)
 
 ---
 
@@ -22,14 +22,6 @@ cd orchestrator-blueprint_orch_components_uc1
 ```
 
 ### 2. Apply All Manifests
-First install the `Kube Prometheus Stack`:
-```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-helm install kube-prom-stack prometheus-community/kube-prometheus-stack \
-  -n monitoring \
-  --create-namespace
-```
 Then install the Scheduler Service Component:
 ```bash
 kubectl apply -f scheduler_service/neo4j.yaml
