@@ -30,11 +30,11 @@ helm install kube-prom-stack prometheus-community/kube-prometheus-stack \
   -n monitoring \
   --create-namespace
 ```
-Then install the Orchestrator Components:
+Then install the Scheduler Service Component:
 ```bash
-kubectl apply -f deployment/neo4j.yaml
-kubectl apply -f deployment/rbac.yaml
-kubectl apply -f deployment/scheduler-deployment.yaml
+kubectl apply -f scheduler_service/neo4j.yaml
+kubectl apply -f scheduler_service/rbac.yaml
+kubectl apply -f scheduler_service/scheduler-deployment.yaml
 ```
 
 Verify all components are running:
