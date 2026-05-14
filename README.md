@@ -37,7 +37,7 @@ kubectl apply -f scheduler_service/rbac.yaml
 kubectl apply -f scheduler_service/scheduler-deployment.yaml
 ```
 
-Verify all components are running:
+Verify that the scheduler and Neo4j are running:
 
 ```bash
 kubectl get pods -n kube-system -o wide
