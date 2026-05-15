@@ -7,6 +7,7 @@ Task placement scheduler for Energy Services on a KubeEdge cluster. When a pod a
 ## Prerequisites
 
 - A running and healthy KubeEdge cluster (edge and cloud nodes joined) and `kubectl` configured and pointing to the cluster - [E0](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/KubeEdge.md) 
+- Cilium [E1](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/Cilium.md)
 - `helm` installed [Helm Package Manager](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/Helm.md)
 - Kube Prometheus Stack [E2](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/KubePrometheusStack.md)
 
