@@ -1,4 +1,4 @@
-# Energy Services Offloading
+# UC1 Energy Services Offloading
 
 Task placement scheduler for Energy Services on a KubeEdge cluster. When a pod annotated with `hedge-iot/*` task properties enters `Pending` state, the scheduler syncs cluster state to a Neo4j graph, runs an Optimization to select the best node, and binds the pod.
 
@@ -6,9 +6,9 @@ Task placement scheduler for Energy Services on a KubeEdge cluster. When a pod a
 
 ## Prerequisites
 
-- `kubectl` configured and pointing to the cluster [E0](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/KubeEdge.md) 
+- A running and healthy KubeEdge cluster (edge and cloud nodes joined) and `kubectl` configured and pointing to the cluster - [E0](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/KubeEdge.md) 
 - `helm` installed [Helm Package Manager](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/Helm.md)
-- [Kube Prometheus Stack](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/KubePrometheusStack.md)
+- Kube Prometheus Stack [E2](https://github.com/HEDGE-IoT/orchestrator-blueprint_external_prereq/blob/main/KubePrometheusStack.md)
 
 ---
 
@@ -22,7 +22,7 @@ cd orchestrator-blueprint_orch_components_uc1
 ```
 
 ### 2. Apply All Manifests
-Then install the Scheduler Service Component:
+Install the Scheduler Service Component:
 ```bash
 kubectl apply -f scheduler_service/neo4j.yaml
 kubectl apply -f scheduler_service/rbac.yaml
