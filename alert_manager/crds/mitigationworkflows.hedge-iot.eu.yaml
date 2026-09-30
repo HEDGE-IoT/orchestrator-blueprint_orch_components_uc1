@@ -1,0 +1,107 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: mitigationworkflows.hedge-iot.eu
+spec:
+  group: hedge-iot.eu
+  scope: Namespaced
+  names:
+    kind: MitigationWorkflow
+    plural: mitigationworkflows
+    singular: mitigationworkflow
+    shortNames: [mw]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Steps
+          type: integer
+          jsonPath: .status.steps
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [steps]
+              properties:
+                description:
+                  type: string
+                steps:
+                  type: array
+                  minItems: 1
+                  description: >-
+                    Ordered solving steps forwarded to the Event Listener and
+                    executed sequentially by the Scheduling Component. Values
+                    may contain "{{ field }}" placeholders resolved from the
+                    alert context (extracted grid fields, target, severity).
+                  items:
+                    type: object
+                    required: [solver]
+                    properties:
+                      name: {type: string}
+                      solver:
+                        type: string
+                        enum: [deploy, scale, migrate, notify]
+                      timeout: {type: string, default: 120s}
+                      continueOnFailure: {type: boolean, default: false}
+                      deploy:
+                        type: object
+                        properties:
+                          manifest:
+                            type: string
+                            description: Kubernetes manifest as YAML.
+                          placement:
+                            type: string
+                            enum: [aco, pinned]
+                            default: aco
+                            description: >-
+                              aco: let the optimisation algorithm choose the
+                              host. pinned: use nodeName below.
+                          nodeName: {type: string}
+                      scale:
+                        type: object
+                        properties:
+                          targetRef:
+                            type: object
+                            properties:
+                              kind: {type: string, default: Deployment}
+                              name: {type: string}
+                              namespace: {type: string}
+                          replicas: {type: integer}
+                      migrate:
+                        type: object
+                        properties:
+                          targetRef:
+                            type: object
+                            properties:
+                              kind: {type: string, default: Deployment}
+                              name: {type: string}
+                              namespace: {type: string}
+                          strategy:
+                            type: string
+                            enum: [scaleUpScaleDown, evict]
+                            default: scaleUpScaleDown
+                            description: >-
+                              scaleUpScaleDown preserves availability: the new
+                              replica is placed and healthy before the old one
+                              is removed.
+                      notify:
+                        type: object
+                        properties:
+                          channel:
+                            type: string
+                            enum: [slack, webhook]
+                          url: {type: string}
+                          message: {type: string}
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                steps: {type: integer}

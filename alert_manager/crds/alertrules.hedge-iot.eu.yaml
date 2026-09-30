@@ -1,0 +1,201 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: alertrules.hedge-iot.eu
+spec:
+  group: hedge-iot.eu
+  scope: Namespaced
+  names:
+    kind: AlertRule
+    plural: alertrules
+    singular: alertrule
+    shortNames: [ar]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Class
+          type: string
+          jsonPath: .spec.source.type
+        - name: Severity
+          type: string
+          jsonPath: .spec.severity
+        - name: Action
+          type: string
+          jsonPath: .spec.action.kind
+        - name: State
+          type: string
+          jsonPath: .status.state
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [source]
+              properties:
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+                  default: true
+                severity:
+                  type: string
+                  enum: [info, warning, critical]
+                  default: warning
+                source:
+                  type: object
+                  required: [type]
+                  properties:
+                    type:
+                      type: string
+                      enum: [metric, grid]
+                    metric:
+                      type: object
+                      description: >-
+                        Pull path. The alert manager queries Prometheus on its
+                        own clock; nothing is pushed into the control loop.
+                      properties:
+                        mode:
+                          type: string
+                          enum: [alerts, promql]
+                          default: alerts
+                          description: >-
+                            alerts: read the ALERTS series produced by
+                            Prometheus rule evaluation (PrometheusRule CRs stay
+                            the declarative surface). promql: evaluate a raw
+                            query and apply the CEL condition below.
+                        alertname:
+                          type: string
+                        query:
+                          type: string
+                        condition:
+                          type: string
+                          description: CEL over `value` and `labels`, e.g. "value > 0.8"
+                        clearCondition:
+                          type: string
+                          description: >-
+                            Hysteresis. Fire at the condition, clear only here.
+                            Omit to clear as soon as the condition goes false.
+                        evaluationInterval:
+                          type: string
+                          default: 15s
+                        for:
+                          type: string
+                          default: 60s
+                        staleAfter:
+                          type: string
+                          default: 90s
+                          description: >-
+                            Samples older than this are Unknown, never Clear.
+                    grid:
+                      type: object
+                      description: Push path, fed by the Message Processing Component.
+                      properties:
+                        topic:
+                          type: string
+                        routingKey:
+                          type: string
+                          default: "#"
+                        payloadSchema:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                          description: JSON Schema 2020-12 applied to the event data.
+                        filter:
+                          type: string
+                          description: CEL over `event`, e.g. "event.severity >= 3"
+                        extract:
+                          type: array
+                          items:
+                            type: object
+                            required: [name, path]
+                            properties:
+                              name: {type: string}
+                              path: {type: string}
+                              required: {type: boolean, default: false}
+                              transform:
+                                type: string
+                                enum: [lower, upper, dns1123]
+                                description: >-
+                                  Normalise the extracted value. Use dns1123 for
+                                  anything that ends up in a Kubernetes object
+                                  name; operator-facing ids such as "SS-14" are
+                                  rejected by the API server otherwise.
+                              default:
+                                x-kubernetes-preserve-unknown-fields: true
+                        for:
+                          type: string
+                          default: 0s
+                        staleAfter:
+                          type: string
+                          default: 300s
+                target:
+                  type: object
+                  properties:
+                    kind: {type: string, default: Deployment}
+                    name:
+                      type: string
+                      description: Static name, or a "{field}" template from the context.
+                    namespace: {type: string, default: default}
+                    nodeFrom:
+                      type: string
+                      default: node
+                      description: Context key holding the node name.
+                    matchLabels:
+                      type: object
+                      additionalProperties: {type: string}
+                guards:
+                  type: object
+                  description: Control-loop safety. Defaults are conservative on purpose.
+                  properties:
+                    cooldown:
+                      type: string
+                      default: 120s
+                      description: Settling time after the rule resolves.
+                    maxActionsPerWindow:
+                      type: integer
+                      default: 3
+                      minimum: 1
+                    window:
+                      type: string
+                      default: 600s
+                    dryRun:
+                      type: boolean
+                      default: false
+                action:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum: [rebalance, workflow]
+                      default: rebalance
+                    workflowRef:
+                      type: object
+                      properties:
+                        name: {type: string}
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                state:
+                  type: string
+                  enum: [Inactive, Pending, Firing, Unknown]
+                target: {type: string}
+                lastTransitionTime: {type: string}
+                activeSince: {type: string}
+                lastValue: {type: number}
+                lastFingerprint: {type: string}
+                inflightEventId: {type: string}
+                breakerOpen: {type: boolean}
+                actionsInWindow: {type: integer}
+                history:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true

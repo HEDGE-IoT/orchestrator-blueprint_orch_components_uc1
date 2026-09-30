@@ -1,24 +1,48 @@
 ---
+# The Alert Manager delivers solving events here (POST /v1/solving-events).
+apiVersion: v1
+kind: Service
+metadata:
+  name: hedge-iot-scheduler
+  namespace: kube-system
+  labels:
+    app: hedge-iot-scheduler
+spec:
+  selector:
+    app: hedge-iot-scheduler
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: my-scheduler
+  name: hedge-iot-scheduler
   namespace: kube-system
   labels:
+    app: hedge-iot-scheduler
     component: scheduler
     tier: control-plane
 spec:
+  # Exactly one. The executor serialises plans within a process; two processes
+  # would plan against each other's half-finished migrations, and leader
+  # election is not implemented.
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
-      component: scheduler
-      tier: control-plane
+      app: hedge-iot-scheduler
   template:
     metadata:
       labels:
+        app: hedge-iot-scheduler
         component: scheduler
         tier: control-plane
     spec:
+      serviceAccountName: hedge-iot-scheduler
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -26,27 +50,34 @@ spec:
             - matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: Exists
-      serviceAccountName: my-scheduler
       # Tolerate control-plane taints so the scheduler can run on master nodes
       tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
         effect: NoSchedule
       containers:
-      - name: my-scheduler
-        image: vofr/custom_scheduler:v1.1
+      - name: scheduler
+        image: vofr/custom_scheduler:v3.0
         # Use IfNotPresent when pulling from a local registry / after a local build.
         # Change to Always when using a remote registry with mutable tags.
         imagePullPolicy: IfNotPresent
         ports:
+        # Solving events from the Alert Manager, /healthz, /nodes, /infrastructure.
         - containerPort: 8080
-          name: alerts
-        - containerPort: 8081
-          name: optimizer
+          name: http
         env:
-        # Empty string → scheduler.py uses load_incluster_config()
-        - name: KUBE_CONFIG_PATH
-          value: ""
+        - name: IN_CLUSTER
+          value: "true"
+        # Must match `spec.schedulerName` in the task manifests.
+        - name: SCHEDULER_NAME
+          value: my-scheduler
+        # Must match a label on the task pod templates.
+        - name: WORKLOAD_SELECTOR
+          value: schedulingStrategy=meetup
+        # Namespace whose pods are scheduled, and the default for solving event
+        # steps that do not name one.
+        - name: NAMESPACE
+          value: default
         - name: NEO4J_URI
           value: "bolt://neo4j.kube-system.svc.cluster.local:7687"
         - name: NEO4J_USER
@@ -56,6 +87,8 @@ spec:
             secretKeyRef:
               name: neo4j-credentials
               key: password
+        - name: LOG_LEVEL
+          value: INFO
         resources:
           requests:
             cpu: "250m"
@@ -63,10 +96,16 @@ spec:
           limits:
             cpu: "1000m"
             memory: "512Mi"
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 8080
+            port: http
           initialDelaySeconds: 15
           periodSeconds: 20
           failureThreshold: 3

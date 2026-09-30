@@ -1,0 +1,98 @@
+# Ordered solving steps, delivered by the Alert Manager to the scheduler and
+# executed one at a time.
+#
+# Placeholders in double braces are resolved from the alert context: the fields
+# named in the rule's `extract` block, plus target, severity and value.
+#
+# Self-contained on purpose: the handler is an nginx stand-in like the example
+# tasks, and the scale step targets a task from task-deployments/. Replace both
+# with your real energy services.
+apiVersion: hedge-iot.eu/v1alpha1
+kind: MitigationWorkflow
+metadata:
+  name: congestion-mitigation
+  namespace: default
+spec:
+  description: Deploy a congestion handler near the affected substation and scale power monitoring.
+  steps:
+    - name: deploy-congestion-handler
+      solver: deploy
+      # aco: the scheduler's optimiser chooses the node, weighing the node
+      # affinity below. `schedulerName` and the `schedulingStrategy` label are
+      # injected by the scheduler, so the manifest does not need them.
+      deploy:
+        placement: aco
+        manifest: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: congestion-handler-{{ substation }}
+            namespace: default
+            labels:
+              app.kubernetes.io/part-of: hedge-iot-energy-services
+              hedge-iot.eu/substation: "{{ substation }}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: congestion-handler-{{ substation }}
+            template:
+              metadata:
+                labels:
+                  app: congestion-handler-{{ substation }}
+                annotations:
+                  hedge-iot.eu/cycles-required: "300000000"
+                  hedge-iot.eu/input-size: "4194304"
+                  hedge-iot.eu/output-size: "4194304"
+                  hedge-iot.eu/exe-size: "100663296"
+                  hedge-iot.eu/deadline: "250"
+                  hedge-iot.eu/ccr: "0.8"
+              spec:
+                affinity:
+                  nodeAffinity:
+                    preferredDuringSchedulingIgnoredDuringExecution:
+                      - weight: 100
+                        preference:
+                          matchExpressions:
+                            - key: kubernetes.io/hostname
+                              operator: In
+                              values: ["{{ node }}"]
+                containers:
+                  - name: handler
+                    image: nginx:1.27-alpine
+                    env:
+                      - name: SUBSTATION_ID
+                        value: "{{ substation }}"
+                      - name: SEVERITY
+                        value: "{{ severity_level }}"
+                    resources:
+                      requests:
+                        cpu: 300m
+                        memory: 128Mi
+      timeout: 180s
+
+    - name: scale-power-monitoring
+      solver: scale
+      scale:
+        targetRef:
+          kind: Deployment
+          name: task-power-monitor
+          namespace: default
+        replicas: 2
+      timeout: 120s
+      # The handler is the part that matters; a missing or slow extra replica
+      # must not abort the mitigation.
+      continueOnFailure: true
+
+    # Add a notification step once you have a webhook to send it to:
+    #
+    # - name: notify-operator
+    #   solver: notify
+    #   notify:
+    #     channel: webhook      # or slack
+    #     url: https://<your-webhook>
+    #     message: >-
+    #       Congestion severity {{ severity_level }} at substation {{ substation }};
+    #       handler deployed near node {{ node }}.
+    #   timeout: 30s
+    #   continueOnFailure: true

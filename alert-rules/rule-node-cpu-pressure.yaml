@@ -1,0 +1,46 @@
+# Computational alert: a node cannot service its runnable work.
+#
+# Metric choice matters here. This deployment deliberately sets no CPU limits,
+# so container_cpu_cfs_throttled_periods_total is always zero and is useless as
+# a contention signal. PSI (node_pressure_cpu_waiting_seconds_total) measures
+# the thing we actually care about: time tasks spend waiting for CPU.
+#
+# The `promql` mode is used rather than `alerts` because the numeric value is
+# wanted for the hysteresis band and for the trigger history.
+apiVersion: hedge-iot.eu/v1alpha1
+kind: AlertRule
+metadata:
+  name: node-cpu-pressure
+  namespace: default
+spec:
+  description: >-
+    Node is under sustained CPU pressure; latency-sensitive energy services
+    hosted on it should be rebalanced.
+  severity: warning
+  source:
+    type: metric
+    metric:
+      mode: promql
+      query: |
+        rate(node_pressure_cpu_waiting_seconds_total[2m])
+      condition: "value > 0.20"
+      # Hysteresis: once firing, stay firing until pressure drops well below
+      # the trigger. Without this the rule flaps around the threshold and
+      # migrates a pod on every evaluation tick.
+      clearCondition: "value < 0.10"
+      evaluationInterval: 15s
+      # PSI is noisy over short windows; require the condition to hold.
+      for: 90s
+      staleAfter: 120s
+  target:
+    kind: Deployment
+    namespace: default
+    nodeFrom: instance
+  guards:
+    cooldown: 180s
+    maxActionsPerWindow: 3
+    window: 900s
+    # Set to false once you have watched it evaluate for a few minutes.
+    dryRun: true
+  action:
+    kind: rebalance

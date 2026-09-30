@@ -1,0 +1,52 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alert-manager
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hedge-iot-alert-manager
+rules:
+# The rules the component evaluates. `patch` is needed on the objects
+# themselves, not only on their status: the operator framework (kopf) records a
+# finalizer and the last-handled configuration on every AlertRule and
+# MitigationWorkflow it reconciles.
+- apiGroups: ["hedge-iot.eu"]
+  resources: ["alertrules", "mitigationworkflows"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: ["hedge-iot.eu"]
+  resources: ["alertrules/status", "mitigationworkflows/status"]
+  verbs: ["get", "patch", "update"]
+# kopf: leader election and progress tracking.
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create"]
+# Read-only context. The alert manager never mutates workloads itself:
+# execution belongs to the scheduler.
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["nodes", "pods", "namespaces"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hedge-iot-alert-manager
+subjects:
+- kind: ServiceAccount
+  name: alert-manager
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: hedge-iot-alert-manager
+  apiGroup: rbac.authorization.k8s.io

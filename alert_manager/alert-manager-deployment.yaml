@@ -1,0 +1,167 @@
+---
+# RabbitMQ (E4) connection for grid alerts. Change before applying.
+# If you do not run RabbitMQ, set AMQP_ENABLED to "false" in the Deployment
+# below; this Secret is then unused.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alert-manager-broker
+  namespace: kube-system
+type: Opaque
+stringData:
+  amqp-url: "amqp://guest:guest@rabbitmq.default.svc.cluster.local:5672/"
+
+---
+# The scheduler reports execution status back here
+# (POST /v1/solving-events/{id}/status).
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-manager
+  namespace: kube-system
+  labels:
+    app: alert-manager
+spec:
+  selector:
+    app: alert-manager
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-manager
+  namespace: kube-system
+  labels:
+    app: alert-manager
+    component: alert-manager
+    tier: control-plane
+spec:
+  replicas: 1
+  strategy:
+    # Only one instance may hold the leader lease and the in-flight locks, so an
+    # update must fully stop the old pod before starting the new one.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: alert-manager
+  template:
+    metadata:
+      labels:
+        app: alert-manager
+        component: alert-manager
+        tier: control-plane
+    spec:
+      serviceAccountName: alert-manager
+      # Keep it on the cloud side, next to the scheduler: edge nodes run the
+      # workloads, and are exactly the nodes an alert may be about.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: alert-manager
+        image: vofr/custom-alert-manager:v1
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        # cluster: rules are AlertRule / MitigationWorkflow custom resources,
+        # state is persisted to their .status.
+        - name: MODE
+          value: cluster
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        # Empty = watch AlertRules in every namespace.
+        - name: WATCH_NAMESPACE
+          value: ""
+        # --- ingress: computational alerts (E2) ---------------------------
+        - name: PROMETHEUS_ENABLED
+          value: "true"
+        # Adjust if your Kube Prometheus Stack release is not `kube-prom` in
+        # the `monitoring` namespace.
+        - name: PROMETHEUS_URL
+          value: "http://kube-prom-kube-prometheus-prometheus.monitoring.svc:9090"
+        # --- ingress: grid alerts (E4) ------------------------------------
+        - name: AMQP_ENABLED
+          value: "true"
+        - name: AMQP_URL
+          valueFrom:
+            secretKeyRef:
+              name: alert-manager-broker
+              key: amqp-url
+        - name: AMQP_EXCHANGE
+          value: hedge.grid
+        # --- egress: solving events to the scheduler ----------------------
+        - name: SINK
+          value: http
+        - name: EVENT_LISTENER_URL
+          value: "http://hedge-iot-scheduler.kube-system.svc:8080"
+        # Handed to the scheduler inside every solving event, so it knows where
+        # to report status. Must resolve to *this* Service, not the scheduler:
+        # pointing it anywhere else loses every report and leaves each rule
+        # locked until its in-flight watchdog expires.
+        - name: CALLBACK_BASE_URL
+          value: "http://alert-manager.kube-system.svc:8080"
+        - name: HTTP_PORT
+          value: "8080"
+        # --- loop ---------------------------------------------------------
+        - name: DEFAULT_EVALUATION_INTERVAL
+          value: "15"
+        - name: DISPATCHER_INTERVAL
+          value: "2"
+        # Global kill switch: rules evaluate and report status but nothing is
+        # sent to the scheduler. Set to "true" for a first run on a live pilot.
+        - name: GLOBAL_DRY_RUN
+          value: "false"
+        - name: LOG_LEVEL
+          value: INFO
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            # Memory only: CPU limits cause throttling, which would distort the
+            # contention signals the computational rules read.
+            memory: "512Mi"
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}

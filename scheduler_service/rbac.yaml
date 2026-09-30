@@ -2,59 +2,53 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: my-scheduler
+  name: hedge-iot-scheduler
   namespace: kube-system
 
 ---
-# Bind to the built-in kube-scheduler role (covers nodes, pods, pods/binding,
-# events, leases, etc. — everything a scheduler needs).
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: my-scheduler-as-kube-scheduler
-subjects:
-- kind: ServiceAccount
-  name: my-scheduler
-  namespace: kube-system
-roleRef:
-  kind: ClusterRole
-  name: system:kube-scheduler
-  apiGroup: rbac.authorization.k8s.io
-
----
-# Extra role: volume/binding and leader-election resources not always in
-# system:kube-scheduler on older distributions.
+# Explicit rather than bound to the built-in system:kube-scheduler role. The
+# scheduler does less than the stock one in some ways and more in others: it
+# binds pods, but it also executes the Alert Manager's solving events, which
+# means creating, patching and scaling Deployments. Each rule below maps to a
+# call the scheduler actually makes.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: my-scheduler-extra
+  name: hedge-iot-scheduler
 rules:
+# Watch pending energy-service pods, bind them, and evict them to migrate.
 - apiGroups: [""]
-  resources: ["pods", "pods/binding", "pods/status"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "delete", "patch"]
+- apiGroups: [""]
+  resources: ["pods/binding"]
+  verbs: ["create"]
+# Capacity and placement decisions.
 - apiGroups: [""]
   resources: ["nodes"]
   verbs: ["get", "list", "watch"]
-- apiGroups: [""]
+# Deploy, scale and migrate energy services (solving event steps).
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments/scale"]
+  verbs: ["get", "update", "patch"]
+# Recorded when a binding decision is made.
+- apiGroups: ["", "events.k8s.io"]
   resources: ["events"]
-  verbs: ["create", "patch", "update"]
-- apiGroups: ["storage.k8s.io"]
-  resources: ["storageclasses", "csinodes", "csidrivers", "csistoragecapacities"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["coordination.k8s.io"]
-  resources: ["leases"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  verbs: ["create", "patch"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: my-scheduler-extra
+  name: hedge-iot-scheduler
 subjects:
 - kind: ServiceAccount
-  name: my-scheduler
+  name: hedge-iot-scheduler
   namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: my-scheduler-extra
+  name: hedge-iot-scheduler
   apiGroup: rbac.authorization.k8s.io

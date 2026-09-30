@@ -1,0 +1,21 @@
+# Optional: lets the Kube Prometheus Stack (E2) scrape the alert manager's own
+# metrics (evaluations, suppressions by guard, emissions).
+#
+# The `release` label must match your E2 Helm release name, otherwise
+# Prometheus ignores this ServiceMonitor.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: alert-manager
+  namespace: kube-system
+  labels:
+    app: alert-manager
+    release: kube-prom
+spec:
+  selector:
+    matchLabels:
+      app: alert-manager
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s

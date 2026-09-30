@@ -1,0 +1,68 @@
+# Grid alert: a congestion event published by the Congestion Forecasting service
+# of the Italian pilot, arriving through the Message Processing Component.
+#
+# The push path has a very different latency budget from the pull path: this
+# reacts in well under a second, whereas a computational rule is bounded below
+# by the scrape interval plus the `for:` duration.
+apiVersion: hedge-iot.eu/v1alpha1
+kind: AlertRule
+metadata:
+  name: grid-congestion-detected
+  namespace: default
+spec:
+  description: >-
+    Predicted or detected network congestion requires a congestion handler to
+    be deployed close to the affected substation.
+  severity: critical
+  source:
+    type: grid
+    grid:
+      topic: grid.congestion
+      routingKey: grid.congestion.#
+      payloadSchema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        required: [substation_id, severity, start_ts, end_ts]
+        properties:
+          substation_id: {type: string}
+          node: {type: string}
+          severity: {type: integer, minimum: 1, maximum: 5}
+          start_ts: {type: string}
+          end_ts: {type: string}
+          predicted_load_kw: {type: number}
+      # CEL, the same expression language Kubernetes uses for admission policy.
+      filter: "event.severity >= 3"
+      extract:
+        - name: substation
+          path: $.substation_id
+          required: true
+          # "SS-14" as published by the pilot is not a legal object name.
+          transform: dns1123
+        - name: node
+          path: $.node
+          required: true
+        - name: severity_level
+          path: $.severity
+          required: true
+        - name: predicted_load
+          path: $.predicted_load_kw
+          required: false
+          default: 0
+      # Grid events are point-in-time; act on the first matching message.
+      for: 0s
+      staleAfter: 300s
+  target:
+    kind: Deployment
+    name: congestion-handler-{substation}
+    namespace: default
+    nodeFrom: node
+  guards:
+    # A substation can legitimately produce several congestion windows in a
+    # shift, but three mitigations in ten minutes means something is wrong.
+    cooldown: 120s
+    maxActionsPerWindow: 3
+    window: 600s
+  action:
+    kind: workflow
+    workflowRef:
+      name: congestion-mitigation
