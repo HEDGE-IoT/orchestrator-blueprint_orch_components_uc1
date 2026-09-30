@@ -1,4 +1,4 @@
-# UC1 Energy Services Offloading
+# UC1 Energy Services Offloading 
 
 Task placement scheduler for Energy Services on a KubeEdge cluster. When a pod annotated with `hedge-iot/*` task properties enters `Pending` state, the scheduler syncs cluster state to a Neo4j graph, runs an Optimization to select the best node, and binds the pod.
 
